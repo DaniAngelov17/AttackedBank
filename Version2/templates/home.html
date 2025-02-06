@@ -1,0 +1,56 @@
+{% extends 'base.html' %}
+{% block title %}Welcome to BankAttack{% endblock %}
+
+{% block content %}
+<style>
+  .hero {
+    background: linear-gradient(to right, #4A00E0, #8E2DE2);
+    color: white;
+    padding: 80px 20px;
+    text-align: center;
+    border-radius: 10px;
+  }
+  .hero h1 {
+    font-size: 3rem;
+    font-weight: bold;
+    margin-bottom: 20px;
+  }
+  .hero p {
+    font-size: 1.3rem;
+    margin-bottom: 20px;
+  }
+  .btn-container {
+    margin-top: 20px;
+  }
+</style>
+
+<!-- Hero Section -->
+<div class="hero">
+  <h1>🏦 Welcome to <span style="color: #FFD700;">BankAttack</span> 💰</h1>
+  
+  {% if 'username' in session %}
+    <p>You are already logged in as <strong>{{ session['username'] }}</strong>.</p>
+    <a href="{{ url_for('dashboard') }}" class="btn btn-light btn-lg">Go to Dashboard</a>
+  
+  {% else %}
+    <p>
+      Welcome to **BankAttack**, the ultimate challenge in security and hacking!  
+      Do you have what it takes to **break in and transfer** 10,000,000 BankAttack dollars? 💸
+    </p>
+    
+    <p><strong>How to Play:</strong></p>
+    <ul class="list-group text-dark mx-auto" style="max-width: 600px; text-align: left;">
+      <li class="list-group-item">✅ <strong>Step 1:</strong> Sign up with any username.</li>
+      <li class="list-group-item">🔓 <strong>Step 2:</strong> Try to hack the **admin** account.</li>
+      <li class="list-group-item">💰 <strong>Step 3:</strong> Transfer the prize money to your account!</li>
+    </ul>
+
+    <p style="margin-top: 20px;">Think you can crack it? Log in or sign up to test your skills!</p>
+
+    <div class="btn-container">
+      <a href="{{ url_for('login') }}" class="btn btn-light btn-lg me-3">🔑 Log In</a>
+      <a href="{{ url_for('signup') }}" class="btn btn-warning btn-lg">🚀 Sign Up</a>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}
