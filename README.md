@@ -1,2 +1,2 @@
 # AttackedBank
-Ciber security project, for a weak bank survice, that is meant to be attacked.
+Cyber security project, for a weak bank survice, that is meant to be attacked.
