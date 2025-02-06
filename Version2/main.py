@@ -1,6 +1,7 @@
 # main.py
 import re
-from flask import Flask, render_template, request, redirect, url_for, session
+import logging
+from flask import Flask, request, redirect, url_for, session, render_template, jsonify
 from database_manager import DatabaseManager
 from user import User
 
@@ -64,17 +65,37 @@ def signup():
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
+    logging.debug(f"Received {request.method} request at /login")
     error = None
+
     if request.method == 'POST':
-        username = request.form['username']
-        password = request.form['password']
-        
+        logging.debug(f"Headers: {request.headers}")
+        logging.debug(f"Raw Request Data: {request.data}")
+
+        # Determine if request is JSON or Form data
+        if request.is_json:
+            data = request.get_json()
+            username = data.get('username')
+            password = data.get('password')
+            logging.debug(f"Received JSON data: {data}")
+        else:
+            username = request.form.get('username')
+            password = request.form.get('password')
+            logging.debug(f"Received Form Data - Username: {username}, Password: {password}")
+
+        # Ensure username and password were received
+        if not username or not password:
+            logging.debug("Missing username or password")
+            return jsonify({"error": "Missing username or password"}), 400
+
+        # Validate credentials
         user_row = db_manager.validate_credentials(username, password)
         if user_row:
-            # user_row is (username, password, notes, balance)
             session['username'] = user_row[0]
+            logging.debug("Login successful! Redirecting to dashboard.")
             return redirect(url_for('dashboard'))
         else:
+            logging.debug("Invalid username or password")
             error = "Invalid username or password."
 
     return render_template('login.html', error=error)
