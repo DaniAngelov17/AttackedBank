@@ -1,4 +1,5 @@
 # main.py
+import re
 from flask import Flask, render_template, request, redirect, url_for, session
 from database_manager import DatabaseManager
 from user import User
@@ -9,12 +10,33 @@ app.secret_key = 'SOME_SECRET_KEY'  # Replace with a secure random value in prod
 # Initialize the database manager
 db_manager = DatabaseManager()
 
+def is_strong_password(password):
+    """
+    Return True if the password is at least 8 characters long,
+    and contains uppercase, lowercase, digit, and special character.
+    """
+    if len(password) < 8:
+        return False
+
+    if not re.search(r"[A-Z]", password):
+        return False
+
+    if not re.search(r"[a-z]", password):
+        return False
+
+    if not re.search(r"\d", password):
+        return False
+
+    # You can customize this list of special characters
+    special_chars_pattern = r"[!@#$%^&*()_+\-=\[\]{};':\"\\|,.<>/?]"
+    if not re.search(special_chars_pattern, password):
+        return False
+
+    return True
 
 @app.route('/')
 def home():
     return render_template('home.html')
-
-
 
 @app.route('/signup', methods=['GET', 'POST'])
 def signup():
@@ -27,12 +49,18 @@ def signup():
         if db_manager.user_exists(username):
             error = "Username already taken, please choose another."
         else:
-            # Create user in DB
-            db_manager.create_user(username, password)
-            return redirect(url_for('login'))
+            # Enforce strong password requirement
+            if not is_strong_password(password):
+                error = (
+                    "Password too weak! Must be at least 8 characters and include "
+                    "uppercase, lowercase, digits, and special characters."
+                )
+            else:
+                # Create user in DB if password is strong
+                db_manager.create_user(username, password)
+                return redirect(url_for('login'))
 
     return render_template('signup.html', error=error)
-
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -50,7 +78,6 @@ def login():
             error = "Invalid username or password."
 
     return render_template('login.html', error=error)
-
 
 @app.route('/dashboard', methods=['GET', 'POST'])
 def dashboard():
@@ -71,6 +98,7 @@ def dashboard():
         target_user_name = request.form['target_user']
         # Attack explanation required if user is admin
         attack_explanation = request.form.get('attack_explanation')  # Could be None if the field doesn't exist
+
         try:
             amount = float(request.form['amount'])
         except ValueError:
@@ -124,13 +152,10 @@ def dashboard():
         error=error
     )
 
-
-
 @app.route('/logout')
 def logout():
     session.pop('username', None)
     return redirect(url_for('login'))
-
 
 if __name__ == '__main__':
     # Run the Flask application
