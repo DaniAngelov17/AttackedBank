@@ -3,6 +3,7 @@ import logging
 from logging.handlers import RotatingFileHandler
 import datetime
 import os
+import bcrypt  # <-- ADD THIS
 from flask import Flask, request, redirect, url_for, session, render_template, jsonify, abort
 from database_manager import DatabaseManager
 from user import User
@@ -10,15 +11,9 @@ from user import User
 app = Flask(__name__)
 app.secret_key = 'SOME_SECRET_KEY'  # Replace with a secure random value in production
 
-# ------------------------------------------------------------------------------
+# --------------------------------------------------------------------------
 # 1. Configure Logging
-# ------------------------------------------------------------------------------
-# Here we configure a rotating file handler that:
-#  - Logs to 'secure_app.log'
-#  - Rotates when the file reaches ~2 MB
-#  - Keeps up to 5 old log files
-#  - Uses a format that includes timestamp, module name, log level, and the message
-# ------------------------------------------------------------------------------
+# --------------------------------------------------------------------------
 log_formatter = logging.Formatter(
     "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
@@ -79,9 +74,13 @@ def signup():
                     "uppercase, lowercase, digits, and special characters."
                 )
             else:
-                # Create user in DB if password is strong
-                db_manager.create_user(username, password)
-                app.logger.info(f"New user created: '{username}'")  # Log creation (no password logged)
+                # Hash the password + salt (bcrypt handles salting internally)
+                hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
+
+                # Create user in DB with hashed password
+                db_manager.create_user(username, hashed_password.decode('utf-8'))
+
+                app.logger.info(f"New user created: '{username}' (password hashed)")
                 return redirect(url_for('login'))
 
     return render_template('signup.html', error=error)
@@ -93,14 +92,11 @@ def login():
 
     error = None
     if request.method == 'POST':
-        # Because raw request data may include passwords, don't log it in detail
         app.logger.debug(f"Request headers: {dict(request.headers)}")
 
-        # Determine if request is JSON or Form data
         if request.is_json:
             data = request.get_json()
             username = data.get('username')
-            # Do NOT log password directly (or mask if you must):
             password = data.get('password')
             app.logger.info(f"Login attempt via JSON for user: '{username}'")
         else:
@@ -108,12 +104,11 @@ def login():
             password = request.form.get('password')
             app.logger.info(f"Login attempt via Form for user: '{username}'")
 
-        # Ensure username and password were received
         if not username or not password:
             app.logger.warning("Missing username or password in login request.")
             return jsonify({"error": "Missing username or password"}), 400
 
-        # Validate credentials
+        # Validate credentials (hashed password check)
         user_row = db_manager.validate_credentials(username, password)
         if user_row:
             session['username'] = user_row[0]
@@ -135,7 +130,6 @@ def dashboard():
     username = session['username']
     user_row = db_manager.get_user(username)
     if not user_row:
-        # Possibly log suspicious activity if session data doesn't match the DB
         app.logger.warning(f"Session user '{username}' not found in DB. Logging out.")
         return redirect(url_for('logout'))
 
@@ -174,7 +168,7 @@ def dashboard():
                     error=error
                 )
             else:
-                # Log the explanation to a file
+                # Log the explanation
                 log_filename = "attack_log.txt"
                 timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 log_entry = f"[{timestamp}] Admin Explanation: {attack_explanation}\n"
@@ -227,15 +221,5 @@ def logout():
         app.logger.info(f"User '{user}' logged out.")
     return redirect(url_for('login'))
 
-# Example of IP whitelisting (or basic restriction)
-# @app.before_request
-# def limit_remote_addr():
-#     allowed_ips = ["192.168.1.0/24", "127.0.0.1"]
-#     if not any(request.remote_addr.startswith(ip.split('/')[0]) for ip in allowed_ips):
-#         abort(403)  # Forbidden
-
-
 if __name__ == '__main__':
-    # Run the Flask application
-    # For production, consider setting debug=False
     app.run(host='0.0.0.0', port=5000, debug=True)
