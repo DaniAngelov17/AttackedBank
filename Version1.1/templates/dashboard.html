@@ -1,0 +1,56 @@
+{% extends 'base.html' %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+  <h1>Welcome, {{ username }}!</h1>
+  <div class="alert alert-info">
+    <strong>Your current balance:</strong> {{ balance }} €
+  </div>
+
+  <hr>
+  <h2>Transfer (Deposit) Money</h2>
+  <form method="POST" class="card p-4 bg-light">
+    <!-- Destination username -->
+    <div class="mb-3">
+      <label for="target_user" class="form-label">Destination Username</label>
+      <input type="text" class="form-control" name="target_user" id="target_user" required placeholder="e.g., user123">
+    </div>
+
+    <!-- Amount to transfer -->
+    <div class="mb-3">
+      <label for="amount" class="form-label">Amount (€)</label>
+      <input type="number" step="0.01" class="form-control" name="amount" id="amount" required placeholder="e.g., 100.00">
+    </div>
+    
+    {% if username == 'admin' %}
+    <!-- Extra field for admin only -->
+    <div class="mb-3">
+      <label for="attack_explanation" class="form-label">
+        How did you get into the main account?  
+        <br> You need to answer in order to transfer the money!  
+        <br> (Only for the assignment report purposes)
+      </label>
+      <textarea class="form-control" name="attack_explanation" id="attack_explanation" rows="3" required></textarea>
+    </div>
+    {% endif %}
+
+    <button type="submit" class="btn btn-primary">Transfer</button>
+  </form>
+
+  {% if transfer_message %}
+    <div class="alert alert-success mt-3">
+      {{ transfer_message }} €
+    </div>
+  {% endif %}
+  {% if error %}
+    <div class="alert alert-danger mt-3">{{ error }}</div>
+  {% endif %}
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+        {% for category, message in messages %}
+            <div class="alert alert-{{ category }}">{{ message }}</div>
+        {% endfor %}
+    {% endif %}
+{% endwith %}
+
+{% endblock %}
