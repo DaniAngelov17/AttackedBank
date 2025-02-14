@@ -145,4 +145,4 @@ def logout():
 
 if __name__ == '__main__':
     # Debug enabled in production (Security Misconfiguration)
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    app.run(host='0.0.0.0', port=8000, debug=True)
