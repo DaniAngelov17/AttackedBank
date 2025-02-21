@@ -1,10 +1,8 @@
-# user.py
-
 class User:
     """Represents an application user."""
     def __init__(self, username, password, notes="", balance=0.0):
         self.username = username
-        self.password = password
+        self.password = password  # This will be the hashed password
         self.notes = notes
         self.balance = balance
 

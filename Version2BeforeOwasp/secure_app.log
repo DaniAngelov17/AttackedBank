@@ -1,6 +1,0 @@
-2025-02-14 09:29:04,656 - main - INFO - Login attempt via Form for user: 'admin'
-2025-02-14 09:29:04,659 - main - WARNING - Invalid login attempt for user 'admin'
-2025-02-14 09:30:10,131 - main - INFO - Login attempt via Form for user: 'admin'
-2025-02-14 09:30:10,133 - main - INFO - User 'admin' logged in successfully.
-2025-02-14 09:32:49,827 - main - INFO - Login attempt via Form for user: 'admin'
-2025-02-14 09:32:49,828 - main - INFO - User 'admin' logged in successfully.

@@ -99,36 +99,45 @@ def dashboard():
         return redirect(url_for('logout'))
     
     balance = user[2]
-    
+    error = None
+
     if request.method == 'POST':
         target_user = request.form['target_user']
-        amount = float(request.form['amount'])
+        amount_str = request.form['amount']
 
-        # NEW: Grab explanation if provided
-        attack_explanation = request.form.get('attack_explanation')
+        try:
+            amount = float(amount_str)
+        except ValueError:
+            error = "Invalid amount entered."
+            flash(error, "danger")
+            return redirect(url_for('dashboard'))
 
-        # If admin is transferring money, log the explanation (if any)
-        if username == 'admin' and attack_explanation:
-            timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            log_entry = f"[{timestamp}] Admin Explanation: {attack_explanation}\n"
-            with open("attack_logWeak.txt", "a", encoding="utf-8") as log_file:
-                log_file.write(log_entry)
-        
+        # NEW: Enforce transfer limit
+        MAX_TRANSFER_AMOUNT = 10_000
+        if amount > MAX_TRANSFER_AMOUNT:
+            amount = MAX_TRANSFER_AMOUNT
+            error = f"Maximum transfer limit is {MAX_TRANSFER_AMOUNT}. Amount adjusted automatically."
+            flash(error, "warning")
+
         cursor.execute("SELECT * FROM users WHERE username = ?", (target_user,))
         target = cursor.fetchone()
-        
+
         if target:
-            new_balance = balance - amount
-            cursor.execute("UPDATE users SET balance = ? WHERE username = ?", (new_balance, username))
-            cursor.execute("UPDATE users SET balance = ? WHERE username = ?", (target[2] + amount, target_user))
-            conn.commit()
-            
-            flash(f"Successfully transferred {amount} to {target_user}", "success")
-            return redirect(url_for('dashboard'))
+            if amount > balance:
+                flash("Insufficient balance.", "danger")
+            else:
+                new_balance = balance - amount
+                cursor.execute("UPDATE users SET balance = ? WHERE username = ?", (new_balance, username))
+                cursor.execute("UPDATE users SET balance = ? WHERE username = ?", (target[2] + amount, target_user))
+                conn.commit()
+
+                flash(f"Successfully transferred {amount} to {target_user}", "success")
+                return redirect(url_for('dashboard'))
         else:
             flash("User not found.", "danger")
-    
+
     return render_template('dashboard.html', username=username, balance=balance)
+
 
 @app.route('/admin')
 def admin_panel():

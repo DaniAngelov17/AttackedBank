@@ -1,23 +1,144 @@
-<!-- templates/login.html -->
 {% extends 'base.html' %}
 {% block title %}Login{% endblock %}
+
 {% block content %}
-  <h1>Login</h1>
-  <form method="POST" class="card p-4 bg-light">
-    <div class="mb-3">
-      <label for="username" class="form-label">Username</label>
-      <input type="text" class="form-control" name="username" id="username" required>
+<h1>Login</h1>
+<form method="POST" class="card p-4 bg-light">
+
+  <!-- Username -->
+  <div class="mb-3">
+    <label for="username" class="form-label">Username</label>
+    <input type="text" class="form-control" name="username" id="username" required>
+  </div>
+
+  <!-- Password -->
+  <div class="mb-3">
+    <label for="password" class="form-label">Password</label>
+    <input type="password" class="form-control" name="password" id="password" required>
+  </div>
+
+  <!-- FAKE Google reCAPTCHA Widget -->
+  <style>
+    .fake-recaptcha {
+      width: 304px;
+      min-height: 78px;
+      border: 1px solid #d3d3d3;
+      border-radius: 4px;
+      background-color: #f9f9f9;
+      padding: 10px;
+      margin-bottom: 1rem;
+      position: relative;
+    }
+    .fake-recaptcha-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .fake-recaptcha-checkbox {
+      width: 28px;
+      height: 28px;
+      border: 1px solid #d3d3d3;
+      border-radius: 3px;
+      background-color: #fff;
+      cursor: pointer;
+      position: relative;
+    }
+    .fake-recaptcha-checkbox.checked::after {
+      content: "";
+      position: absolute;
+      top: 4px;
+      left: 9px;
+      width: 5px;
+      height: 10px;
+      border: solid #4285f4;
+      border-width: 0 2px 2px 0;
+      transform: rotate(45deg);
+    }
+    .fake-recaptcha-label {
+      font-size: 14px;
+      cursor: pointer;
+      user-select: none;
+      margin-left: 8px;
+    }
+    .fake-recaptcha-footer {
+      margin-top: 5px;
+      font-size: 10px;
+      color: #757575;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    /* The hidden math question that shows up once box is checked */
+    #captcha-question {
+      display: none;
+      margin-top: 10px;
+    }
+    #captcha {
+      margin-top: 5px;
+    }
+  </style>
+
+  <div class="fake-recaptcha">
+    <div class="fake-recaptcha-top">
+      <!-- Left side: checkbox & text -->
+      <div style="display: flex; align-items: center;">
+        <div class="fake-recaptcha-checkbox" id="fake-recaptcha-checkbox"></div>
+        <span class="fake-recaptcha-label">I'm not a robot</span>
+      </div>
+      <!-- Right side: Larger reCAPTCHA icon -->
+      <img 
+        src="https://upload.wikimedia.org/wikipedia/commons/thumb/a/ad/RecaptchaLogo.svg/256px-RecaptchaLogo.svg.png" 
+        alt="reCAPTCHA" 
+        style="height: 36px;"
+      >
     </div>
-    <div class="mb-3">
-      <label for="password" class="form-label">Password</label>
-      <input type="password" class="form-control" name="password" id="password" required>
+
+    <div class="fake-recaptcha-footer">
+      <span>reCAPTCHA</span>
+      <div>
+        <a href="#" style="color: inherit; text-decoration: underline;">Privacy</a> -
+        <a href="#" style="color: inherit; text-decoration: underline;">Terms</a>
+      </div>
     </div>
-    <button type="submit" class="btn btn-primary">Login</button>
-    <p class="mt-3">
-       Don’t have an account? <a href="{{ url_for('signup') }}">Sign up</a>
-    </p>
-    {% if error %}
-      <div class="alert alert-danger mt-3">{{ error }}</div>
-    {% endif %}
-  </form>
+
+    <!-- Math question appears only when the checkbox is checked -->
+    <div id="captcha-question">
+      <label for="captcha">Solve this: {{ session['captcha_question'] }}</label>
+      <input 
+        type="text" 
+        class="form-control" 
+        name="captcha" 
+        id="captcha" 
+        placeholder="Enter answer" 
+      />
+    </div>
+  </div>
+
+  <!-- JS to Show/Hide Math Question -->
+  <script>
+    const checkbox = document.getElementById("fake-recaptcha-checkbox");
+    const captchaQuestion = document.getElementById("captcha-question");
+
+    checkbox.addEventListener("click", function() {
+      checkbox.classList.toggle("checked");
+      // If it's "checked," reveal the math question
+      if (checkbox.classList.contains("checked")) {
+        captchaQuestion.style.display = "block";
+      } else {
+        captchaQuestion.style.display = "none";
+      }
+    });
+  </script>
+
+  <!-- Submit Button -->
+  <button type="submit" class="btn btn-primary">Login</button>
+
+  <p class="mt-3">
+    Don’t have an account? <a href="{{ url_for('signup') }}">Sign up</a>
+  </p>
+
+  {% if error %}
+    <div class="alert alert-danger mt-3">{{ error }}</div>
+  {% endif %}
+</form>
 {% endblock %}

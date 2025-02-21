@@ -1,15 +1,19 @@
 import sqlite3
-import bcrypt  # <-- ADD THIS
-
+import bcrypt
+import time
 class DatabaseManager:
     def __init__(self, db_path='users.db'):
         self.db_path = db_path
         self.init_db()
 
     def init_db(self):
-        """Initialize the SQLite database and create tables if they don't exist."""
+        """
+        Initialize the SQLite database and create the 'users' table if it doesn't exist.
+        Also inserts a default admin user with a hashed password if not present.
+        """
         conn = sqlite3.connect(self.db_path)
         c = conn.cursor()
+        # Create table if it doesn't exist
         c.execute('''
             CREATE TABLE IF NOT EXISTS users (
                 username TEXT PRIMARY KEY,
@@ -19,8 +23,8 @@ class DatabaseManager:
             )
         ''')
 
-        # Insert a default admin with hashed password if not exists
-        admin_password = "a1d2m3I4n5!@#"
+        # Insert a default admin user with a hashed password if not exists
+        admin_password = "a1d2m3I4n5!@#"  # Example admin password
         hashed_admin_password = bcrypt.hashpw(admin_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
         c.execute('''
@@ -32,7 +36,10 @@ class DatabaseManager:
         conn.close()
 
     def get_user(self, username):
-        """Return user row as a tuple (username, password, notes, balance) or None."""
+        """
+        Return user row as a tuple (username, password, notes, balance)
+        or None if user doesn't exist.
+        """
         conn = sqlite3.connect(self.db_path)
         c = conn.cursor()
         c.execute("SELECT * FROM users WHERE username = ?", (username,))
@@ -41,7 +48,9 @@ class DatabaseManager:
         return user_row
 
     def create_user(self, username, hashed_password):
-        """Insert a new user with zero balance by default."""
+        """
+        Insert a new user with hashed password, empty notes, and zero balance.
+        """
         conn = sqlite3.connect(self.db_path)
         c = conn.cursor()
         c.execute("""
@@ -51,28 +60,22 @@ class DatabaseManager:
         conn.commit()
         conn.close()
 
-    def validate_credentials(self, username, password):
-        """
-        Check if credentials are valid.
-        Return user tuple if valid, else None.
-        """
-        conn = sqlite3.connect(self.db_path)
-        c = conn.cursor()
-        c.execute("SELECT * FROM users WHERE username = ?", (username,))
-        user = c.fetchone()
-        conn.close()
+   
 
-        if user:
-            stored_hashed_password = user[1]  # hashed password in DB
-            # Compare given password (hashed) with stored hashed password
+    def validate_credentials(username, password):
+        user_row = db_manager.get_user(username)
+        if user_row:
+            stored_hashed_password = user_row[1]
             if bcrypt.hashpw(password.encode('utf-8'), stored_hashed_password.encode('utf-8')) == stored_hashed_password.encode('utf-8'):
-                return user
-
-        # If user doesn't exist or password didn't match
+                return user_row
+        time.sleep(2)  # Delay brute-force attempts
         return None
 
+
     def update_balance(self, username, new_balance):
-        """Update a user's balance."""
+        """
+        Update a user's balance in the database.
+        """
         conn = sqlite3.connect(self.db_path)
         c = conn.cursor()
         c.execute("UPDATE users SET balance = ? WHERE username = ?", (new_balance, username))
@@ -80,5 +83,7 @@ class DatabaseManager:
         conn.close()
 
     def user_exists(self, username):
-        """Check if a user with the given username already exists."""
+        """
+        Check if a user with the given username already exists.
+        """
         return self.get_user(username) is not None
