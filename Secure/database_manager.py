@@ -2,7 +2,7 @@ import sqlite3
 import bcrypt
 import time
 class DatabaseManager:
-    def __init__(self, db_path='users.db'):
+    def __init__(self, db_path='users_secure.db'):
         self.db_path = db_path
         self.init_db()
 

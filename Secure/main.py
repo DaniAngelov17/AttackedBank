@@ -1,20 +1,26 @@
 import re
 import logging
-import random 
+import random
 from logging.handlers import RotatingFileHandler
-import datetime
 import os
 import bcrypt
 import secrets
-import requests
+import time
 from datetime import timedelta, datetime
-from flask import Flask, request, redirect, url_for, session, render_template, jsonify, abort
+
+import requests  # Optional, if used somewhere else
+from flask import Flask, request, redirect, url_for, session, render_template, abort
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
+from flask.logging import default_handler
+
 from database_manager import DatabaseManager
 from user import User
 from functools import wraps
 
+##############################################################################
+# Flask Application Setup
+##############################################################################
 app = Flask(__name__)
 
 # --------------------------------------------------------------------------
@@ -26,10 +32,10 @@ app.secret_key = secrets.token_hex(32)
 
 # Session security settings
 app.config.update(
-    SESSION_COOKIE_SECURE=False,      # Set to True if you have HTTPS
+    SESSION_COOKIE_SECURE=False,      # True if you have HTTPS
     SESSION_COOKIE_HTTPONLY=True,     # Prevent JavaScript access to session cookie
     SESSION_COOKIE_SAMESITE='Lax',    # Helps protect against CSRF
-    PERMANENT_SESSION_LIFETIME=timedelta(minutes=5)  # Session expires after 5 minutes of inactivity
+    PERMANENT_SESSION_LIFETIME=timedelta(minutes=5)  # Session expires after 5 min of inactivity
 )
 
 # --------------------------------------------------------------------------
@@ -39,16 +45,37 @@ log_formatter = logging.Formatter(
     "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 log_file = "secure_app.log"
+
+# Remove default Flask logger to avoid duplicates
+app.logger.removeHandler(default_handler)
+
+# Set up rotating file handler
 log_handler = RotatingFileHandler(log_file, maxBytes=2_000_000, backupCount=5)
 log_handler.setFormatter(log_formatter)
 log_handler.setLevel(logging.INFO)
 
 app.logger.addHandler(log_handler)
 app.logger.setLevel(logging.INFO)
-# End of logging configuration
 
-# Initialize the database manager
+# Suppress overly verbose werkzeug logs, except for errors
+logging.getLogger('werkzeug').setLevel(logging.ERROR)
+
+# --------------------------------------------------------------------------
+# 3. Create and Configure Database Manager
+# --------------------------------------------------------------------------
 db_manager = DatabaseManager()
+
+##############################################################################
+# Helper Functions
+##############################################################################
+def login_limit_key():
+    """
+    Custom rate-limit key:
+      - IP address + username (if provided) 
+    """
+    ip = get_remote_address()
+    username = request.form.get('username', 'no_user')
+    return f"{ip}-{username}"
 
 def is_strong_password(password):
     """
@@ -69,15 +96,23 @@ def is_strong_password(password):
     return True
 
 def generate_captcha():
-    """Generates a simple math CAPTCHA question and stores the answer in the session."""
-    if 'captcha_answer' not in session:
-        session['captcha_answer'] = ""
+    """
+    Generates a simple math CAPTCHA question and stores the answer in the session.
+    """
     num1 = random.randint(1, 10)
     num2 = random.randint(1, 10)
-    session['captcha_answer'] = str(num1 + num2)  # Store as string for comparison
+    session['captcha_answer'] = str(num1 + num2)
     return f"{num1} + {num2} = ?"
 
+##############################################################################
+# Flask-Limiter Setup
+##############################################################################
+limiter = Limiter(key_func=get_remote_address)
+limiter.init_app(app)
 
+##############################################################################
+# Routes
+##############################################################################
 @app.route('/')
 def home():
     return render_template('home.html')
@@ -85,7 +120,7 @@ def home():
 @app.route('/signup', methods=['GET', 'POST'])
 def signup():
     """
-    Handles the user signup:
+    Handles user signup:
      - Checks if passwords match (if confirm_password is provided)
      - Ensures username doesn't already exist
      - Enforces strong password requirements
@@ -94,16 +129,16 @@ def signup():
     """
     error = None
     if request.method == 'POST':
-        username = request.form['username']
-        password = request.form['password']
-        confirm_password = request.form.get('confirm_password')
-        
+        username = request.form.get('username')
+        password = request.form.get('password')
+        confirm_password = request.form.get('confirm_password', '')
+
         # Check password confirmation
-        if confirm_password and password != confirm_password:
+        if confirm_password and (password != confirm_password):
             error = "Passwords do not match."
         # Check if user already exists
         elif db_manager.user_exists(username):
-            error = "Username already taken, please choose another."
+            error = f"Username '{username}' already taken, please choose another."
         else:
             # Validate password strength
             if not is_strong_password(password):
@@ -112,54 +147,55 @@ def signup():
                     "uppercase, lowercase, digits, and special characters."
                 )
             else:
-                # Hash the password (bcrypt does salting automatically)
+                # Hash the password
                 hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
-
-                # Create user in DB with hashed password (store as utf-8 string)
+                # Store user in DB with hashed password (as UTF-8 string)
                 db_manager.create_user(username, hashed_password.decode('utf-8'))
-
                 app.logger.info(f"New user created: '{username}' (password hashed)")
                 return redirect(url_for('login'))
+
     return render_template('signup.html', error=error)
 
-
-limiter = Limiter(key_func=get_remote_address)
-limiter.init_app(app)
-
 @app.route('/login', methods=['GET', 'POST'])
-@limiter.limit("5 per minute")
+@limiter.limit("5 per minute", methods=["POST"], key_func=login_limit_key)
 def login():
     """
-    Handles user login:
-    - Uses a simple math CAPTCHA for bot prevention.
+    Handles user login with a simple math CAPTCHA for bot prevention.
     - Validates CAPTCHA answer before processing login.
+    - Logs invalid attempts, successful logins, and missing credentials.
     """
-    user_ip = request.remote_addr  # Get IP
-    app.logger.debug(f"Received {request.method} request at /login from {user_ip}")
+    user_ip = request.remote_addr
     error = None
 
     if request.method == 'GET':
-        session['captcha_question'] = generate_captcha()  # Generate CAPTCHA
-        return render_template('login.html', error=error)
+        session['captcha_question'] = generate_captcha()
+        return render_template('login.html', error=error, captcha_question=session['captcha_question'])
 
     if request.method == 'POST':
         username = request.form.get('username')
         password = request.form.get('password')
-        captcha_input = request.form.get('captcha')  # Get CAPTCHA answer from user
+        captcha_input = request.form.get('captcha')
 
+        # Basic check for empty fields
         if not username or not password or not captcha_input:
             app.logger.warning(f"Missing login credentials from IP {user_ip}.")
-            return render_template('login.html', error="Please fill in all fields and complete the CAPTCHA.")
-
+            session['captcha_question'] = generate_captcha()
+            return render_template('login.html', 
+                                   error="Please fill in all fields and complete the CAPTCHA.",
+                                   captcha_question=session['captcha_question'])
 
         # CAPTCHA Validation
         if captcha_input.strip() != session.get('captcha_answer'):
             app.logger.warning(f"Failed CAPTCHA for user '{username}' from IP {user_ip}.")
-            session['captcha_question'] = generate_captcha()  # Generate new CAPTCHA on failure
-            return render_template('login.html', error="Incorrect CAPTCHA. Try again.")
+            session['captcha_question'] = generate_captcha()
+            return render_template('login.html', 
+                                   error="Incorrect CAPTCHA. Try again.",
+                                   captcha_question=session['captcha_question'])
 
-        # Simulated user validation (Replace this with actual DB check)
+        # Check credentials (Example: only 'admin' with a known strong password)
+        # Replace this with a real DB check in production.
         if username == "admin" and password == "V3yT@By>%w3[cXlI":
+            # Successful login
             session.clear()
             session.permanent = True
             session['username'] = username
@@ -167,15 +203,17 @@ def login():
             app.logger.info(f"User '{username}' logged in successfully from IP {user_ip}.")
             return redirect(url_for('dashboard'))
         else:
+            # Invalid login attempt
             app.logger.warning(f"Invalid login attempt for user '{username}' from IP {user_ip}.")
-            time.sleep(2)  # Introduce delay to slow brute-force attacks
-            session['captcha_question'] = generate_captcha()  # Generate new CAPTCHA
-            return render_template('login.html', error="Invalid username or password.")
+            # Delay to mitigate brute-force
+            time.sleep(2)
+            # Renew CAPTCHA
+            session['captcha_question'] = generate_captcha()
+            return render_template('login.html',
+                                   error="Invalid username or password.",
+                                   captcha_question=session['captcha_question'])
 
     return render_template('login.html', error=error)
-
-
-
 
 def login_required(f):
     """
@@ -184,6 +222,7 @@ def login_required(f):
     """
     @wraps(f)
     def decorated_function(*args, **kwargs):
+        # Check if user is logged in
         if 'username' not in session:
             return redirect(url_for('login'))
 
@@ -195,6 +234,7 @@ def login_required(f):
         # Check if session has timed out
         idle_time = datetime.now().timestamp() - last_activity
         if idle_time > app.config['PERMANENT_SESSION_LIFETIME'].total_seconds():
+            app.logger.info(f"Session for user '{session.get('username')}' timed out due to inactivity.")
             session.clear()
             return redirect(url_for('login'))
 
@@ -213,55 +253,59 @@ def dashboard():
     username = session['username']
     user_row = db_manager.get_user(username)
     if not user_row:
+        # If the user doesn't exist in DB for some reason
         app.logger.warning(f"Session user '{username}' not found in DB. Logging out.")
         return redirect(url_for('logout'))
 
-    # Create a User object from the DB row
+    # Construct the current_user from DB record
     current_user = User(user_row[0], user_row[1], user_row[2], user_row[3])
     transfer_message = None
     error = None
 
     if request.method == 'POST':
-        target_user_name = request.form['target_user']
-        attack_explanation = request.form.get('attack_explanation')  # If admin
-        amount_str = request.form.get('amount')
+        target_user_name = request.form.get('target_user', '')
+        amount_str = request.form.get('amount', '0')
+        attack_explanation = request.form.get('attack_explanation', '')  # If admin
 
+        # Validate the amount
         try:
             amount = float(amount_str)
-        except (ValueError, TypeError):
+        except ValueError:
             error = "Invalid amount."
             app.logger.debug(f"User '{username}' entered invalid amount '{amount_str}'")
             return render_template(
                 'dashboard.html',
                 username=current_user.username,
                 balance=current_user.balance,
-                transfer_message=transfer_message,
+                transfer_message=None,
                 error=error
             )
 
         # If the amount exceeds 10,000, adjust it and notify the user
         MAX_TRANSFER_AMOUNT = 10_000
         if amount > MAX_TRANSFER_AMOUNT:
-            amount = MAX_TRANSFER_AMOUNT
             error = f"Maximum transfer limit is {MAX_TRANSFER_AMOUNT}. Amount adjusted to {MAX_TRANSFER_AMOUNT}."
             app.logger.warning(f"User '{username}' attempted to transfer more than {MAX_TRANSFER_AMOUNT}.")
+            amount = MAX_TRANSFER_AMOUNT
 
         # If admin, require explanation
         if current_user.username == 'admin':
-            if not attack_explanation or not attack_explanation.strip():
+            if not attack_explanation.strip():
                 error = "Admin must provide an explanation of how attackers got in."
                 return render_template(
                     'dashboard.html',
                     username=current_user.username,
                     balance=current_user.balance,
-                    transfer_message=transfer_message,
+                    transfer_message=None,
                     error=error
                 )
             else:
-                # Append the explanation to a log file
-                log_filename = "attack_log.txt"
+                # Write explanation to a separate file
+                log_filename = "attack_log_secure.txt"
                 timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                log_entry = f"[{timestamp}] Admin Explanation: {attack_explanation}\n"
+                # Minimal sanitization to avoid newlines hijack
+                sanitized_explanation = attack_explanation.replace("\n", " ").replace("\r", " ")
+                log_entry = f"[{timestamp}] Admin Explanation: {sanitized_explanation}\n"
                 with open(log_filename, "a", encoding="utf-8") as f:
                     f.write(log_entry)
                 app.logger.info("Admin provided an attack explanation.")
@@ -272,10 +316,13 @@ def dashboard():
             error = "Insufficient balance."
             app.logger.warning(f"User '{username}' attempted to transfer more than their balance.")
         else:
+            # Check if target user exists
             target_row = db_manager.get_user(target_user_name)
             if not target_row:
                 error = f"User '{target_user_name}' does not exist."
-                app.logger.warning(f"User '{username}' attempted transfer to non-existent user '{target_user_name}'.")
+                app.logger.warning(
+                    f"User '{username}' attempted to transfer to non-existent user '{target_user_name}'."
+                )
             else:
                 # Perform the transfer
                 current_user.withdraw(amount)
@@ -299,7 +346,6 @@ def dashboard():
         error=error
     )
 
-
 @app.route('/logout')
 def logout():
     user = session.pop('username', None)
@@ -307,13 +353,19 @@ def logout():
         app.logger.info(f"User '{user}' logged out.")
     return redirect(url_for('login'))
 
-# For demonstration, you could enable simple IP whitelisting (commented out):
+# ----------------------------------------------------------------------------
+# Optional: Simple IP Whitelisting (commented out by default)
+# ----------------------------------------------------------------------------
 # @app.before_request
 # def limit_remote_addr():
-#     allowed_ips = ["127.0.0.1"]
+#     allowed_ips = ["127.0.0.1", "192.168.2.8"]
 #     if request.remote_addr not in allowed_ips:
+#         app.logger.warning(f"Blocked request from non-whitelisted IP: {request.remote_addr}")
 #         abort(403)  # Forbidden
 
+# ----------------------------------------------------------------------------
+# Main Entry
+# ----------------------------------------------------------------------------
 if __name__ == '__main__':
-    # In production, set debug=False and run behind a production server
+    # In production, set debug=False and run behind a production server (e.g., gunicorn/uWSGI)
     app.run(host='0.0.0.0', port=5001, debug=False)

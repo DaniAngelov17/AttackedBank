@@ -15,7 +15,7 @@ logging.basicConfig(
 )
 
 # Database connection
-conn = sqlite3.connect('usersWeak.db', check_same_thread=False)
+conn = sqlite3.connect('users_insecure.db', check_same_thread=False)
 cursor = conn.cursor()
 
 # Ensure users table exists
@@ -105,6 +105,27 @@ def dashboard():
         target_user = request.form['target_user']
         amount_str = request.form['amount']
 
+        # ------------------------------------------------
+        # If the user is admin, require an attack explanation
+        if username == 'admin':
+            attack_explanation = request.form.get('attack_explanation')
+            if not attack_explanation or not attack_explanation.strip():
+                flash("Admin must provide an explanation of how attackers got in.", "danger")
+                return redirect(url_for('dashboard'))
+            else:
+                # Log to a separate file
+                log_filename = "attack_log_insecure.txt"
+                timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                log_entry = f"[{timestamp}] Admin Explanation: {attack_explanation}\n"
+                
+                # Write the explanation to a file
+                with open(log_filename, "a", encoding="utf-8") as f:
+                    f.write(log_entry)
+                
+                # Also log via the logger
+                logging.info("Admin provided an attack explanation.")
+        # ------------------------------------------------
+
         try:
             amount = float(amount_str)
         except ValueError:
@@ -137,7 +158,6 @@ def dashboard():
             flash("User not found.", "danger")
 
     return render_template('dashboard.html', username=username, balance=balance)
-
 
 @app.route('/admin')
 def admin_panel():
