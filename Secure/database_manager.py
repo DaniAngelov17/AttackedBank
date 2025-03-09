@@ -66,10 +66,11 @@ class DatabaseManager:
         user_row = db_manager.get_user(username)
         if user_row:
             stored_hashed_password = user_row[1]
-            if bcrypt.hashpw(password.encode('utf-8'), stored_hashed_password.encode('utf-8')) == stored_hashed_password.encode('utf-8'):
+            if bcrypt.checkpw(password.encode('utf-8'), stored_hashed_password.encode('utf-8')):  # Fixed comparison
                 return user_row
         time.sleep(2)  # Delay brute-force attempts
         return None
+
 
 
     def update_balance(self, username, new_balance):

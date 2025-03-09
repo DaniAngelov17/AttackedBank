@@ -174,7 +174,7 @@ def login():
     if request.method == 'POST':
         username = request.form.get('username')
         password = request.form.get('password')
-        captcha_input = request.form.get('captcha')
+        captcha_input = request.form.get('captcha', '').strip()
 
         # Basic check for empty fields
         if not username or not password or not captcha_input:
@@ -185,44 +185,51 @@ def login():
                                    captcha_question=session['captcha_question'])
 
         # CAPTCHA Validation
-        if captcha_input.strip() != session.get('captcha_answer'):
+        if captcha_input != session.get('captcha_answer'):
             app.logger.warning(f"Failed CAPTCHA for user '{username}' from IP {user_ip}.")
             session['captcha_question'] = generate_captcha()
             return render_template('login.html', 
                                    error="Incorrect CAPTCHA. Try again.",
                                    captcha_question=session['captcha_question'])
 
-        # Check credentials (Example: only 'admin' with a known strong password)
-        # Replace this with a real DB check in production.
-        if username == "admin" and password == "V3yT@By>%w3[cXlI":
-            # Successful login
-            session.clear()
-            session.permanent = True
-            session['username'] = username
-            session['last_activity'] = datetime.now().timestamp()
-            app.logger.info(f"User '{username}' logged in successfully from IP {user_ip}.")
-            return redirect(url_for('dashboard'))
+
+
+       # Validate credentials against the actual DB records:
+        user_row = db_manager.get_user(username)
+        if user_row:
+            stored_hashed_password = user_row[1]  # The password column
+            # Compare provided password with stored hashed password
+            if bcrypt.checkpw(password.encode('utf-8'), stored_hashed_password.encode('utf-8')):
+                # SUCCESS: store session info and redirect
+                session.clear()
+                session.permanent = True
+                session['username'] = username
+                session['last_activity'] = datetime.now().timestamp()
+                app.logger.info(f"User '{username}' logged in successfully from IP {user_ip}.")
+                return redirect(url_for('dashboard'))
+            else:
+                # Wrong password
+                app.logger.warning(f"Invalid password for user '{username}' from IP {user_ip}.")
+                time.sleep(2)  # Mitigate brute-force
+                session['captcha_question'] = generate_captcha()
+                return render_template('login.html',
+                                       error="Invalid username or password.",
+                                       captcha_question=session['captcha_question'])
         else:
-            # Invalid login attempt
-            app.logger.warning(f"Invalid login attempt for user '{username}' from IP {user_ip}.")
-            # Delay to mitigate brute-force
+            # No such user in DB
+            app.logger.warning(f"User '{username}' does not exist. IP {user_ip}.")
             time.sleep(2)
-            # Renew CAPTCHA
             session['captcha_question'] = generate_captcha()
             return render_template('login.html',
                                    error="Invalid username or password.",
                                    captcha_question=session['captcha_question'])
+        
 
     return render_template('login.html', error=error)
 
 def login_required(f):
-    """
-    Decorator to ensure the user is logged in (and session hasn't expired) 
-    before accessing certain routes (like dashboard).
-    """
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        # Check if user is logged in
         if 'username' not in session:
             return redirect(url_for('login'))
 
@@ -231,17 +238,17 @@ def login_required(f):
             session.clear()
             return redirect(url_for('login'))
 
-        # Check if session has timed out
         idle_time = datetime.now().timestamp() - last_activity
         if idle_time > app.config['PERMANENT_SESSION_LIFETIME'].total_seconds():
-            app.logger.info(f"Session for user '{session.get('username')}' timed out due to inactivity.")
+            flash("Session expired due to inactivity. Please log in again.", "danger")
+            app.logger.info(f"Session for user '{session.get('username')}' timed out.")
             session.clear()
             return redirect(url_for('login'))
 
-        # Update the last activity time
         session['last_activity'] = datetime.now().timestamp()
         return f(*args, **kwargs)
     return decorated_function
+
 
 @app.route('/dashboard', methods=['GET', 'POST'])
 @login_required
